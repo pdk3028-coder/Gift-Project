@@ -141,10 +141,9 @@ def index():
 @app.route('/login', methods=['POST'])
 def login():
     emp_id = request.form.get('emp_id')
-    ssn_last = request.form.get('ssn_last')
     agree_privacy = request.form.get('agree_privacy')
 
-    user = database.get_employee_by_auth(emp_id, ssn_last)
+    user = database.get_employee_by_id(emp_id)
     
     if user:
         if not agree_privacy:
@@ -158,7 +157,7 @@ def login():
         session['user_name'] = user['name']
         return redirect(url_for('dashboard'))
     else:
-        flash('사번 또는 주민등록번호가 일치하지 않습니다.', 'error')
+        flash('등록되지 않은 사번입니다. 관리자에게 문의하세요.', 'error')
         return redirect(url_for('index'))
 
 @app.route('/logout')
@@ -214,9 +213,8 @@ def info_update():
 def admin_login():
     if request.method == 'POST':
         password = request.form.get('password')
-        real_password = database.get_setting('admin_password', 'admin1234')
         
-        if password == real_password:
+        if database.verify_admin_password(password):
             session['is_admin'] = True
             return redirect(url_for('admin'))
         else:
@@ -258,7 +256,7 @@ def update_settings():
     # Password Change
     new_password = request.form.get('new_password')
     if new_password:
-        database.set_setting('admin_password', new_password)
+        database.set_admin_password(new_password)
         flash('비밀번호 및 설정이 저장되었습니다.', 'success')
     else:
         flash('시스템 설정이 저장되었습니다.', 'success')
@@ -314,10 +312,8 @@ def admin_reset():
         return redirect(url_for('admin_login'))
         
     password = request.form.get('password')
-    # Use same logic as login
-    current_admin_pw = database.get_setting('admin_password', 'admin1234')
     
-    if password == current_admin_pw:
+    if database.verify_admin_password(password):
         database.reset_all_data()
         flash('모든 데이터가 초기화되었습니다.', 'success')
     else:

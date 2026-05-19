@@ -1,7 +1,7 @@
 import sqlite3
 import pandas as pd
 from datetime import datetime
-import hashlib # V10
+from werkzeug.security import generate_password_hash, check_password_hash
 
 DB_NAME = 'employees.db'
 
@@ -9,11 +9,6 @@ def get_db_connection():
     conn = sqlite3.connect(DB_NAME, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
-
-# V10: Hash Helper
-def hash_val(val):
-    """Returns SHA-256 hash of the value."""
-    return hashlib.sha256(str(val).encode()).hexdigest()
 
 def init_db():
     """Initializes the database with the employees table and migrates if needed."""
@@ -26,7 +21,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             emp_id TEXT NOT NULL UNIQUE,
-            ssn TEXT NOT NULL,
+            ssn TEXT DEFAULT '',  -- V17: SSN no longer required
             address_main TEXT,
             address_main_detail TEXT,  -- Added in V2
             phone TEXT,
@@ -95,38 +90,26 @@ def init_db():
         )
     ''')
 
-    # V10 Migration: Hash existing plain text SSNs
-    # Check if 'ssn_hashed' flag setting exists, if not, migration might be needed
-    # Actually, we can check a sample row. If len(ssn) < 64 (sha256 hex len), it's plaintext.
-    print("Checking for SSN Migration (V10 Hashing)...")
-    rows = c.execute("SELECT id, ssn FROM employees").fetchall()
-    migrated_count = 0
-    for row in rows:
-        ssn = row['ssn']
-        # SHA-256 hexdigest is 64 chars. If simpler, it's old format.
-        # Support formats: 'xxxxxx-xxxxxxx' or just 'xxxxxxx'
-        if len(ssn) < 64:
-            if '-' in ssn:
-                # Format: Front-Back. We want to store Front-Hash(Back) to preserve birthdate info?
-                # Decision: Store full hash? No, user wants security.
-                # Let's simple: We will store Hash(Back). We LOSE Front info (Birthdate).
-                # But wait, if we lose birthdate, can we verify? Login uses EmpID+Back.
-                # Verification: Hash(Input_Back). Compare with Stored.
-                # If Stored is Hash(Back), we good.
-                # If Stored is Front-Back, we change to Hash(Back).
-                parts = ssn.split('-')
-                if len(parts) > 1:
-                    new_ssn = hash_val(parts[1])
-                    c.execute("UPDATE employees SET ssn = ? WHERE id = ?", (new_ssn, row['id']))
-                    migrated_count += 1
-            else:
-                # Assuming it is just back part
-                new_ssn = hash_val(ssn)
-                c.execute("UPDATE employees SET ssn = ? WHERE id = ?", (new_ssn, row['id']))
-                migrated_count += 1
-    
-    if migrated_count > 0:
-        print(f"Migrated {migrated_count} SSNs to SHA-256 Hashes.")
+    # V17 Migration: SSN 데이터 완전 제거 (민감개인정보 삭제)
+    if 'ssn' in columns:
+        cleared = c.execute("UPDATE employees SET ssn = '' WHERE ssn != ''").rowcount
+        if cleared > 0:
+            print(f"V17 Migration: {cleared}건의 SSN 데이터를 삭제했습니다.")
+
+    # V18 Migration: 관리자 비밀번호 평문 -> 해시 변환
+    pw_row = c.execute("SELECT value FROM system_settings WHERE key = 'admin_password'").fetchone()
+    if pw_row:
+        stored_pw = pw_row[0]
+        # Werkzeug 해시는 'scrypt:' 또는 'pbkdf2:' 등으로 시작
+        if not (stored_pw.startswith('scrypt:') or stored_pw.startswith('pbkdf2:')):
+            hashed = generate_password_hash(stored_pw)
+            c.execute("UPDATE system_settings SET value = ? WHERE key = 'admin_password'", (hashed,))
+            print("V18 Migration: 관리자 비밀번호를 해시로 변환했습니다.")
+    else:
+        # 기본 비밀번호 설정
+        default_hash = generate_password_hash('admin1234')
+        c.execute("INSERT INTO system_settings (key, value) VALUES ('admin_password', ?)", (default_hash,))
+        print("V18 Migration: 기본 관리자 비밀번호(admin1234)를 해시로 저장했습니다.")
 
     conn.commit()
     conn.close()
@@ -138,6 +121,18 @@ def get_setting(key, default='true'):
     row = conn.execute('SELECT value FROM system_settings WHERE key = ?', (key,)).fetchone()
     conn.close()
     return row['value'] if row else default
+
+def set_admin_password(new_password):
+    """관리자 비밀번호를 해시하여 저장합니다."""
+    hashed = generate_password_hash(new_password)
+    set_setting('admin_password', hashed)
+
+def verify_admin_password(input_password):
+    """입력된 비밀번호가 저장된 해시와 일치하는지 확인합니다."""
+    stored_hash = get_setting('admin_password', '')
+    if not stored_hash:
+        return False
+    return check_password_hash(stored_hash, input_password)
 
 def set_setting(key, value):
     """Sets a system setting."""
@@ -160,37 +155,14 @@ def update_privacy_consent(emp_id):
     conn.commit()
     conn.close()
 
-def get_employee_by_auth(emp_id, ssn_suffix):
-    """
-    Retrieves an employee by emp_id and checking if ssn ends with ssn_suffix.
-    V10 Update: Checks against Hashed SSN.
-    """
+def get_employee_by_id(emp_id):
+    """사번만으로 사원을 조회합니다."""
     conn = get_db_connection()
-    # Join with gift_options to get selected gift details if any
-    # Or just return employee row and fetch gift separately.
-    # Let's just return raw employee row for auth.
     user = conn.execute('SELECT * FROM employees WHERE emp_id = ?', (emp_id,)).fetchone()
     conn.close()
-    
-    if user:
-        db_ssn = user['ssn']
-        # Convert input suffix to hash
-        input_hash = hash_val(ssn_suffix)
-        
-        # Check direct match (V10 Hashed storage)
-        if db_ssn == input_hash:
-            return user
-            
-        # Fallback for legacy (if migration failed or mixed)
-        # Check if db_ssn is plaintext and matches
-        if len(db_ssn) < 64: 
-             if '-' in db_ssn:
-                 if db_ssn.split('-')[1] == ssn_suffix:
-                     return user
-             elif db_ssn == ssn_suffix:
-                 return user
-            
-    return None
+    return user
+
+
 
 def update_employee_info(emp_id, data):
     """Updates employee information. Handles partial updates."""
@@ -241,8 +213,8 @@ def upsert_employees_from_excel(filepath):
     Reads an Excel file and updates/inserts employees.
     Uses specific column indices based on user provided data layout (V7).
     - Zipcode: 55 -> 54 (Added in V8)
-    V10 Update: Hashes SSN Back before storing. Discards Front.
     V11 Update: Force read as string to preserve leading zeros.
+    V17 Update: SSN 관련 로직 제거 (민감개인정보 미수집).
     """
     # V11: dtype=str to preserve leading zeros
     df = pd.read_excel(filepath, dtype=str)
@@ -279,13 +251,6 @@ def upsert_employees_from_excel(filepath):
     clean_df['emp_id'] = clean_str(get_col_data(11))
     clean_df['name'] = clean_str(get_col_data(12))
     
-    # V10: Store Hash(Back) only
-    # ssn_front = clean_str(get_col_data(24)) # Not storing front anymore for privacy
-    ssn_back = clean_str(get_col_data(26))
-    
-    # Apply hashing
-    clean_df['ssn'] = ssn_back.apply(lambda x: hash_val(x) if x else '')
-    
     clean_df['phone'] = clean_str(get_col_data(52))
     clean_df['address_main'] = clean_str(get_col_data(53))
     clean_df['zipcode'] = clean_str(get_col_data(54))
@@ -303,18 +268,17 @@ def upsert_employees_from_excel(filepath):
         exists = c.fetchone()
         
         if exists:
-            # V10 Update: Update SSN with hash
             # V13 Update: Don't overwrite selected_gift_id on re-import
             c.execute('''
                 UPDATE employees
-                SET name = ?, ssn = ?, address_main = ?, zipcode = ?, phone = ?, last_updated = ?
+                SET name = ?, address_main = ?, zipcode = ?, phone = ?, last_updated = ?
                 WHERE emp_id = ?
-            ''', (row['name'], row['ssn'], row['address_main'], row['zipcode'], row['phone'], datetime.now(), row['emp_id']))
+            ''', (row['name'], row['address_main'], row['zipcode'], row['phone'], datetime.now(), row['emp_id']))
         else:
             c.execute('''
-                INSERT INTO employees (name, emp_id, ssn, address_main, zipcode, phone, last_updated)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (row['name'], row['emp_id'], row['ssn'], row['address_main'], row['zipcode'], row['phone'], datetime.now()))
+                INSERT INTO employees (name, emp_id, address_main, zipcode, phone, last_updated)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (row['name'], row['emp_id'], row['address_main'], row['zipcode'], row['phone'], datetime.now()))
         count += 1
         
     # Record upload time

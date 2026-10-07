@@ -6,8 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>관리자 로그인</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-</head>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
 <style>
     body {
         background-color: #f1f5f9;
@@ -49,6 +48,7 @@
         font-size: 1rem;
     }
 </style>
+</head>
 
 <body>
     <div class="login-container">
@@ -63,6 +63,7 @@
         {% endwith %}
 
         <form action="{{ url_for('admin_login') }}" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="form-group">
                 <label for="password">비밀번호</label>
                 <input type="password" id="password" name="password" required autofocus placeholder="비밀번호를 입력하세요">

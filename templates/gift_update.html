@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>선물 배송지 관리</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+    <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
 </head>
 
 <body>
@@ -26,6 +26,7 @@
             {% endwith %}
 
             <form action="{{ url_for('gift_update') }}" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <!-- Section 1: Read Only View -->
                 <div id="readOnlySection">
                     <h3
@@ -68,7 +69,7 @@
                         <label style="cursor: pointer; position: relative;">
                             <input type="radio" name="selected_gift_id" value="{{ gift.id }}" {% if
                                 user.selected_gift_id==gift.id %}checked{% endif %}
-                                style="position: absolute; opacity: 0;">
+                                required style="position: absolute; opacity: 0;">
                             <div class="gift-card"
                                 style="border: 2px solid {% if user.selected_gift_id == gift.id %}var(--primary-color){% else %}var(--border-color){% endif %}; border-radius: 0.5rem; overflow: hidden; height: 100%; transition: border-color 0.2s;">
                                 {% if gift.image_path %}
@@ -122,13 +123,12 @@
                                 value="{{ user.gift_zipcode or '' }}" readonly placeholder="우편번호" style="width: 100px;">
                             <button type="button" class="btn btn-primary btn-sm" onclick="openPostcode()">검색</button>
                         </div>
-                        <input type="text" id="gift_address" name="gift_address" value="{{ user.gift_address }}"
+                        <input type="text" id="gift_address" name="gift_address" value="{{ user.gift_address or '' }}"
                             readonly placeholder="기본 주소" style="margin-bottom: 0.5rem;">
                         <input type="text" id="gift_address_detail" name="gift_address_detail"
                             value="{{ user.gift_address_detail or '' }}" placeholder="상세 주소를 입력하세요">
                     </div>
                 </div>
-        </div>
 
         <button type="submit" class="btn btn-primary" style="margin-top: 2rem;" id="submitBtn">저장하기</button>
         <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">메인으로 돌아가기</a>
@@ -152,6 +152,7 @@
             const isSameAddress = document.getElementById('same_address').checked;
             const addressEditSection = document.getElementById('addressEditSection');
             const submitBtn = document.getElementById('submitBtn');
+            addressEditSection.querySelectorAll('input, button').forEach(el => el.disabled = isSameAddress);
 
             if (isSameAddress) {
                 addressEditSection.style.display = 'none';

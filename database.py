@@ -1,14 +1,28 @@
 import sqlite3
+import os
+import re
+from pathlib import Path
+from contextlib import contextmanager
 import pandas as pd
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
-DB_NAME = 'employees.db'
+DB_NAME = str(Path(os.environ.get('GIFT_DATABASE', Path(__file__).resolve().parent / 'employees.db')).resolve())
 
 def get_db_connection():
     conn = sqlite3.connect(DB_NAME, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+@contextmanager
+def transaction():
+    conn = get_db_connection()
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 def init_db():
     """Initializes the database with the employees table and migrates if needed."""
@@ -105,11 +119,18 @@ def init_db():
             hashed = generate_password_hash(stored_pw)
             c.execute("UPDATE system_settings SET value = ? WHERE key = 'admin_password'", (hashed,))
             print("V18 Migration: 관리자 비밀번호를 해시로 변환했습니다.")
-    else:
-        # 기본 비밀번호 설정
-        default_hash = generate_password_hash('admin1234')
-        c.execute("INSERT INTO system_settings (key, value) VALUES ('admin_password', ?)", (default_hash,))
-        print("V18 Migration: 기본 관리자 비밀번호(admin1234)를 해시로 저장했습니다.")
+    # A new database has no default password. Use the local set-admin-password command.
+
+    # Repair legacy dangling selections and protect future writes, including races.
+    c.execute('''UPDATE employees SET selected_gift_id = NULL
+                 WHERE selected_gift_id IS NOT NULL AND selected_gift_id NOT IN
+                 (SELECT id FROM gift_options)''')
+    for operation in ('INSERT', 'UPDATE OF selected_gift_id'):
+        trigger = 'employee_gift_' + operation.split()[0].lower()
+        c.execute(f'''CREATE TRIGGER IF NOT EXISTS {trigger} BEFORE {operation} ON employees
+            WHEN NEW.selected_gift_id IS NOT NULL AND NOT EXISTS
+            (SELECT 1 FROM gift_options WHERE id = NEW.selected_gift_id AND is_active = 1)
+            BEGIN SELECT RAISE(ABORT, 'invalid gift'); END''')
 
     conn.commit()
     conn.close()
@@ -124,13 +145,15 @@ def get_setting(key, default='true'):
 
 def set_admin_password(new_password):
     """관리자 비밀번호를 해시하여 저장합니다."""
+    if not isinstance(new_password, str) or not 12 <= len(new_password) <= 128:
+        raise ValueError('관리자 비밀번호는 12~128자로 입력해주세요.')
     hashed = generate_password_hash(new_password)
     set_setting('admin_password', hashed)
 
 def verify_admin_password(input_password):
     """입력된 비밀번호가 저장된 해시와 일치하는지 확인합니다."""
     stored_hash = get_setting('admin_password', '')
-    if not stored_hash:
+    if not stored_hash or not isinstance(input_password, str) or not input_password or len(input_password) > 128:
         return False
     return check_password_hash(stored_hash, input_password)
 
@@ -151,7 +174,7 @@ def update_privacy_consent(emp_id):
         SET privacy_agreed = 1,
             privacy_agreed_at = ?
         WHERE emp_id = ?
-    ''', (datetime.now(), emp_id))
+    ''', (datetime.now().isoformat(sep=' ', timespec='seconds'), emp_id))
     conn.commit()
     conn.close()
 
@@ -186,14 +209,17 @@ def update_employee_info(emp_id, data):
             values.append(data[key])
             
     updates.append("last_updated = ?")
-    values.append(datetime.now())
+    values.append(datetime.now().isoformat(sep=' ', timespec='seconds'))
     values.append(emp_id)
     
     query = f"UPDATE employees SET {','.join(updates)} WHERE emp_id = ?"
     
-    c.execute(query, tuple(values))
-    conn.commit()
-    conn.close()
+    try:
+        with conn:
+            c.execute(query, tuple(values))
+    finally:
+        conn.close()
+
 
 def get_all_employees():
     """Returns all employees as a pandas DataFrame (for admin export)."""
@@ -208,94 +234,73 @@ def get_all_employees():
     conn.close()
     return df
 
+# Header names are validated instead of relying on column positions.
+IMPORT_COLUMNS = {
+    'emp_id': ('사번', '사원번호', 'emp_id'),
+    'name': ('성명', '이름', '사원명', 'name'),
+    'phone': ('휴대폰', '휴대폰번호', '휴대전화', '휴대전화번호', '핸드폰', '핸드폰번호', '연락처', '전화번호', 'phone'),
+    'address_main': ('주소', '주민등록주소', '주민등록상주소', '자택주소', '현주소', '현거주지', 'address_main'),
+    'zipcode': ('우편번호', '우편번호-현', 'zipcode'),
+}
+
+
 def upsert_employees_from_excel(filepath):
-    """
-    Reads an Excel file and updates/inserts employees.
-    Uses specific column indices based on user provided data layout (V7).
-    - Zipcode: 55 -> 54 (Added in V8)
-    V11 Update: Force read as string to preserve leading zeros.
-    V17 Update: SSN 관련 로직 제거 (민감개인정보 미수집).
-    """
-    # V11: dtype=str to preserve leading zeros
-    df = pd.read_excel(filepath, dtype=str)
-    
-    # Map by index
-    # We create a new clean dataframe
-    clean_df = pd.DataFrame()
-    
-    # Helper to safe access by iloc
-    def get_col_data(col_idx):
-        if col_idx < len(df.columns):
-            return df.iloc[:, col_idx]
-        return None
+    """Validate the entire workbook before committing a single transaction."""
+    df = pd.read_excel(filepath, dtype=str, keep_default_na=False)
+    if df.empty or len(df) > 20000:
+        raise ValueError('명부는 1~20,000행이어야 합니다.')
+    normalize = lambda value: ''.join(str(value).split()).lower()
+    mapped = {}
+    for field, aliases in IMPORT_COLUMNS.items():
+        # pandas suffixes duplicate headers with .1, .2, ...; reject those too.
+        matches = [column for column in df.columns
+                   if re.sub(r'\.\d+$', '', normalize(column)) in aliases]
+        if len(matches) != 1:
+            raise ValueError(f'필수 열을 확인해주세요: {aliases[0]} (중복 없이 1개 필요)')
+        mapped[field] = matches[0]
+    records = []
+    seen = set()
+    for index, row in df.iterrows():
+        item = {field: str(row[column]).strip() for field, column in mapped.items()}
+        if not item['emp_id'] or not item['name']:
+            raise ValueError(f'{index + 2}행: 사번과 성명은 필수입니다.')
+        if item['emp_id'] in seen:
+            raise ValueError(f'{index + 2}행: 중복 사번이 있습니다.')
+        if any(len(value) > 500 or any(ord(char) < 32 for char in value) for value in item.values()):
+            raise ValueError(f'{index + 2}행: 값이 너무 길거나 제어 문자가 있습니다.')
+        # HR exports can retain legacy six-digit postal codes. Preserve them;
+        # converting to a current code requires looking up the actual address.
+        if re.fullmatch(r'[0-9]{3}-[0-9]{3}', item['zipcode']):
+            item['zipcode'] = item['zipcode'].replace('-', '')
+        if item['zipcode'] and not re.fullmatch(r'[0-9]{5,6}', item['zipcode']):
+            raise ValueError(f'{index + 2}행: 우편번호는 5자리 또는 기존 6자리 숫자여야 합니다.')
+        seen.add(item['emp_id'])
+        records.append(item)
+    with transaction() as conn:
+        for item in records:
+            # Older databases require ssn with no default. Explicitly store an
+            # empty value for compatibility; never import sensitive ID data.
+            conn.execute('''
+                INSERT INTO employees (emp_id, name, phone, address_main, zipcode, last_updated, ssn)
+                VALUES (?, ?, ?, ?, ?, ?, '')
+                ON CONFLICT(emp_id) DO UPDATE SET
+                    name = excluded.name,
+                    phone = COALESCE(NULLIF(excluded.phone, ''), employees.phone),
+                    address_main = COALESCE(NULLIF(excluded.address_main, ''), employees.address_main),
+                    zipcode = COALESCE(NULLIF(excluded.zipcode, ''), employees.zipcode),
+                    last_updated = excluded.last_updated
+            ''', (item['emp_id'], item['name'], item['phone'], item['address_main'], item['zipcode'], datetime.now().isoformat(sep=' ', timespec='seconds')))
+        conn.execute('INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)',
+                     ('last_upload_time', datetime.now().strftime('%Y-%m-%d %H:%M')))
+    return len(records)
 
-    # Function to clean typical Excel numeric artifacts (e.g. 1234.0 -> 1234)
-    # V11: Since we read as str, .0 might not happen as often but still safe to keep
-    def clean_str(series):
-        if series is None:
-            return pd.Series([''] * len(df))
-            
-        def convert_val(x):
-            s = str(x).strip()
-            if s.lower() in ['nan', 'none', '', 'nat']:
-                return ''
-            
-            # V15 Fix: Only remove trailing .0 artifact. Do NOT cast to float/int
-            # as that removes leading zeros (e.g. "0123" -> 123.0 -> "123")
-            if s.endswith('.0'):
-                return s[:-2]
-            return s
-                
-        return series.apply(convert_val)
-
-    clean_df['emp_id'] = clean_str(get_col_data(11))
-    clean_df['name'] = clean_str(get_col_data(12))
-    
-    clean_df['phone'] = clean_str(get_col_data(52))
-    clean_df['address_main'] = clean_str(get_col_data(53))
-    clean_df['zipcode'] = clean_str(get_col_data(54))
-    
-    # Clean up NaNs (redundant but safe)
-    clean_df = clean_df.replace({'nan': '', 'None': ''})
-
-    conn = get_db_connection()
-    c = conn.cursor()
-    
-    count = 0
-    for _, row in clean_df.iterrows():
-        # Check if employee exists
-        c.execute('SELECT id FROM employees WHERE emp_id = ?', (row['emp_id'],))
-        exists = c.fetchone()
-        
-        if exists:
-            # V13 Update: Don't overwrite selected_gift_id on re-import
-            c.execute('''
-                UPDATE employees
-                SET name = ?, address_main = ?, zipcode = ?, phone = ?, last_updated = ?
-                WHERE emp_id = ?
-            ''', (row['name'], row['address_main'], row['zipcode'], row['phone'], datetime.now(), row['emp_id']))
-        else:
-            c.execute('''
-                INSERT INTO employees (name, emp_id, address_main, zipcode, phone, last_updated)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (row['name'], row['emp_id'], row['address_main'], row['zipcode'], row['phone'], datetime.now()))
-        count += 1
-        
-    # Record upload time
-    # deadlock fix: use same cursor instead of calling set_setting (which opens new conn)
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    c.execute('INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)', ('last_upload_time', now_str))
-
-    conn.commit()
-    conn.close()
-    return count
 
 def reset_all_data():
     """V11: Deletes all employee data and resets settings."""
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("DELETE FROM employees")
-    c.execute("DELETE FROM system_settings")
+    c.execute("DELETE FROM system_settings WHERE key != 'admin_password'")
     c.execute("DELETE FROM gift_options") # V13
     # Restore default settings if needed, or leave empty
     conn.commit()
@@ -308,7 +313,7 @@ def add_gift_option(name, description, image_path):
     c.execute('''
         INSERT INTO gift_options (name, description, image_path, created_at)
         VALUES (?, ?, ?, ?)
-    ''', (name, description, image_path, datetime.now()))
+    ''', (name, description, image_path, datetime.now().isoformat(sep=' ', timespec='seconds')))
     conn.commit()
     conn.close()
 
@@ -319,10 +324,9 @@ def get_gift_options():
     return [dict(row) for row in rows]
 
 def delete_gift_option(gift_id):
-    conn = get_db_connection()
-    conn.execute('DELETE FROM gift_options WHERE id = ?', (gift_id,))
-    conn.commit()
-    conn.close()
+    # Preserve the gift name for historical selections and exports.
+    with transaction() as conn:
+        conn.execute('UPDATE gift_options SET is_active = 0 WHERE id = ?', (gift_id,))
 
 def get_gift_by_id(gift_id):
     conn = get_db_connection()

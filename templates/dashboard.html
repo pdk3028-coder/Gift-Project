@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>대시보드 - 사원 인사정보 시스템</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&amp;display=swap" rel="stylesheet">
 </head>
 
 <body>
@@ -17,6 +17,9 @@
                 <p class="card-description">원하시는 서비스를 선택해주세요.</p>
             </div>
 
+            {% for category, message in get_flashed_messages(with_categories=true) %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
             <div style="display: grid; gap: 1rem;">
                 {% if enable_info %}
                 <a href="{{ url_for('info_update') }}" class="btn btn-primary"
@@ -35,7 +38,7 @@
 
             <div class="section-divider"></div>
 
-            <a href="{{ url_for('logout') }}" style="color: var(--text-secondary); text-decoration: none;">로그아웃</a>
+            <form action="{{ url_for('logout') }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-secondary" type="submit">로그아웃</button></form>
         </div>
     </div>
 </body>

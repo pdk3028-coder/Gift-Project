@@ -16,3 +16,7 @@ uploads/
 # IDE
 .vscode/
 .idea/
+
+# Local signing key and runtime state
+instance/
+.venv/

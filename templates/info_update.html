@@ -7,7 +7,7 @@
     <title>인사정보 수정</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <!-- Daum Postcode API -->
-    <script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+    <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
 </head>
 
 <body>
@@ -27,6 +27,7 @@
             {% endwith %}
 
             <form action="{{ url_for('info_update') }}" method="POST" id="updateForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="form-group">
                     <label>성명 (사번)</label>
                     <input type="text" value="{{ user.name }} ({{ user.emp_id }})" disabled
@@ -70,7 +71,7 @@
 
                     <div class="form-group">
                         <label for="phone">연락처</label>
-                        <input type="text" id="phone" name="phone" value="{{ user.phone }}" required>
+                        <input type="text" id="phone" name="phone" value="{{ user.phone or '' }}" required>
                     </div>
 
                     <div class="form-group">
@@ -80,7 +81,7 @@
                                 placeholder="우편번호" style="width: 100px;">
                             <button type="button" class="btn btn-primary btn-sm" onclick="openPostcode()">검색</button>
                         </div>
-                        <input type="text" id="address_main" name="address_main" value="{{ user.address_main }}"
+                        <input type="text" id="address_main" name="address_main" value="{{ user.address_main or '' }}"
                             readonly placeholder="기본 주소" style="margin-bottom: 0.5rem;">
                         <input type="text" id="address_main_detail" name="address_main_detail"
                             value="{{ user.address_main_detail or '' }}" placeholder="상세 주소를 입력하세요">
@@ -109,12 +110,12 @@
             const isNoChange = document.getElementById('no_change').checked;
             const editSection = document.getElementById('editSection');
             const submitBtn = document.getElementById('submitBtn');
+            editSection.querySelectorAll('input, button').forEach(el => el.disabled = isNoChange);
 
             if (isNoChange) {
                 editSection.style.display = 'none';
                 submitBtn.textContent = '확인 (날짜 갱신)';
-                // Fill inputs with current values to submit same data
-                // (Backend will update timestamp)
+                // The server preserves stored values and updates only the timestamp.
             } else {
                 editSection.style.display = 'block';
                 submitBtn.textContent = '저장하기';

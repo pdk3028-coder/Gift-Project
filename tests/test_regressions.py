@@ -92,7 +92,7 @@ class RegressionTests(unittest.TestCase):
                     self.assertNotIn(b'href="/dashboard"', response.data)
         database.set_setting('enable_info_update', 'true')
         response = self.post('/info_update', {'no_change':'on'}, follow_redirects=True)
-        self.assertEqual(response.request.path, '/info_update')
+        self.assertEqual(response.request.path, '/complete/info')
         self.assertIn('인사 정보가 저장되었습니다.', response.get_data(as_text=True))
         self.post('/logout')
         self.assertEqual(self.client.get('/dashboard').location, '/')
@@ -140,6 +140,30 @@ class RegressionTests(unittest.TestCase):
         self.post('/info_update', {'phone':'010-9876-5432','address_main':'New address',
                                  'address_main_detail':'202','zipcode':'02345'})
         self.assertEqual(database.get_employee_by_id('00123')['address_main'], 'New address')
+
+    def test_completion_requires_success_and_displays_saved_values(self):
+        self.assertEqual(self.client.get('/complete/info').location, '/')
+        self.employee()
+        self.assertEqual(self.client.get('/complete/info').location, '/dashboard')
+        failed = self.post('/info_update', {}, follow_redirects=True)
+        self.assertEqual(failed.request.path, '/info_update')
+        self.assertEqual(self.client.get('/complete/info').location, '/dashboard')
+        saved = self.post('/info_update', {'phone':'010-9876-5432','address_main':'Saved address',
+                          'address_main_detail':'Room 202','zipcode':'02345'}, follow_redirects=True)
+        self.assertEqual(saved.request.path, '/complete/info')
+        for value in ['Saved address', 'Room 202', '02345', '010-9876-5432', '이제 이 창을 닫으셔도 됩니다.']:
+            self.assertIn(value, saved.get_data(as_text=True))
+        self.assert_valid_html('/complete/info')
+        database.add_gift_option('Gift completion test', '', '')
+        gift = database.get_gift_options()[0]
+        saved = self.post('/gift_update', {'same_address':'on', 'selected_gift_id':str(gift['id'])}, follow_redirects=True)
+        self.assertEqual(saved.request.path, '/complete/gift')
+        self.assertIn('Gift completion test', saved.get_data(as_text=True))
+        self.assertIn('Gift address', saved.get_data(as_text=True))
+        self.assert_valid_html('/complete/gift')
+        self.assertEqual(self.client.get('/complete/gift').status_code, 200)
+        self.post('/logout')
+        self.assertEqual(self.client.get('/complete/gift').location, '/')
 
     def test_gift_validation_and_history(self):
         database.add_gift_option('Gift A','','')

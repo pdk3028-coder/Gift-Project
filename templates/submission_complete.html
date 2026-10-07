@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>입력 완료 - 사원 정보 시스템</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .complete-mark { margin: 0 auto 1rem; width: 64px; height: 64px; border-radius: 50%; background: #dcfce7; color: #15803d; font-size: 36px; line-height: 64px; }
+        .saved-details { margin: 1.5rem 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: .75rem; background: #f8fafc; text-align: left; overflow-wrap: anywhere; }
+        .saved-details dt { font-size: .8rem; color: var(--text-secondary); margin-top: 1rem; }
+        .saved-details dt:first-child { margin-top: 0; }
+        .saved-details dd { margin: .25rem 0 0; font-weight: 500; }
+    </style>
+</head>
+<body>
+    <main class="container">
+        <div class="card" style="text-align: center;">
+            <div class="complete-mark" aria-hidden="true">✓</div>
+            <h1 class="card-title">입력이 완료되었습니다</h1>
+            <p>{{ '인사 정보' if kind == 'info' else '선물 배송지 정보' }}가 저장되었습니다.</p>
+            <p style="margin-top: .75rem; font-weight: 700; color: #15803d;">이제 이 창을 닫으셔도 됩니다.</p>
+
+            <dl class="saved-details">
+                <dt>성명 / 사번</dt><dd>{{ user.name }} / {{ user.emp_id }}</dd>
+                {% if kind == 'info' %}
+                <dt>연락처</dt><dd>{{ user.phone or '-' }}</dd>
+                <dt>주소</dt><dd>{% if user.zipcode %}[{{ user.zipcode }}] {% endif %}{{ user.address_main or '-' }} {{ user.address_main_detail or '' }}</dd>
+                {% else %}
+                <dt>선물</dt><dd>{{ gift.name if gift else '선택된 선물 없음' }}</dd>
+                <dt>수령인</dt><dd>{{ user.gift_receiver or '-' }}</dd>
+                <dt>배송 주소</dt><dd>{% if user.gift_zipcode %}[{{ user.gift_zipcode }}] {% endif %}{{ user.gift_address or '-' }} {{ user.gift_address_detail or '' }}</dd>
+                {% endif %}
+            </dl>
+
+            <p class="card-description">내용을 수정하려면 아래 버튼을 누르세요.<br>창을 닫은 후에도 다시 접속하여 수정할 수 있습니다.</p>
+            {% if can_edit %}
+            <a href="{{ url_for('info_update' if kind == 'info' else 'gift_update') }}" class="btn btn-secondary">다시 수정하기</a>
+            {% endif %}
+            {% if other_enabled %}
+            <a href="{{ url_for('gift_update' if kind == 'info' else 'info_update') }}" class="btn btn-secondary">{{ '선물 배송지 관리' if kind == 'info' else '인사정보 수정' }}로 이동</a>
+            {% endif %}
+            <form action="{{ url_for('logout') }}" method="POST" style="margin-top: 1rem;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-primary">로그아웃하고 마치기</button>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

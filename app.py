@@ -198,8 +198,8 @@ def info_update():
         except ValueError as error:
             flash(str(error), 'error')
             return redirect(url_for('info_update'))
-        flash('인사 정보가 저장되었습니다.', 'success')
-        return redirect(url_for('dashboard'))
+        session['completed_info'] = True
+        return redirect(url_for('submission_complete', kind='info'))
     return render_template('info_update.html', user=user,
                            show_dashboard=database.get_setting('enable_gift_update') == 'true')
 
@@ -234,13 +234,28 @@ def gift_update():
         except (ValueError, sqlite3.IntegrityError) as error:
             flash(str(error) if isinstance(error, ValueError) else '선물 목록이 변경되었습니다. 다시 선택해주세요.', 'error')
             return redirect(url_for('gift_update'))
-        flash('선물 배송지 정보가 저장되었습니다.', 'success')
-        return redirect(url_for('dashboard'))
+        session['completed_gift'] = True
+        return redirect(url_for('submission_complete', kind='gift'))
     if not user.get('gift_address'):
         user.update(gift_address=user.get('address_main'), gift_address_detail=user.get('address_main_detail'),
                     gift_zipcode=user.get('zipcode'), gift_receiver=user['name'])
     return render_template('gift_update.html', user=user, gift_options=gifts,
                            show_dashboard=database.get_setting('enable_info_update') == 'true')
+
+
+@app.route('/complete/<kind>')
+def submission_complete(kind):
+    if 'user_id' not in session:
+        return redirect(url_for('index'))
+    if kind not in ('info', 'gift'):
+        abort(404)
+    if not session.get('completed_' + kind):
+        return redirect(url_for('dashboard'))
+    user = database.get_employee_by_id(session['user_id'])
+    gift = database.get_gift_by_id(user['selected_gift_id']) if kind == 'gift' and user['selected_gift_id'] else None
+    return render_template('submission_complete.html', user=user, gift=gift, kind=kind,
+                           can_edit=database.get_setting('enable_' + kind + '_update') == 'true',
+                           other_enabled=database.get_setting('enable_' + ('gift' if kind == 'info' else 'info') + '_update') == 'true')
 
 
 @app.route('/admin/login', methods=['GET', 'POST'])

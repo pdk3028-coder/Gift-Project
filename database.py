@@ -239,8 +239,10 @@ IMPORT_COLUMNS = {
     'emp_id': ('사번', '사원번호', 'emp_id'),
     'name': ('성명', '이름', '사원명', 'name'),
     'phone': ('휴대폰', '휴대폰번호', '휴대전화', '휴대전화번호', '핸드폰', '핸드폰번호', '연락처', '전화번호', 'phone'),
-    'address_main': ('주소', '주민등록주소', '주민등록상주소', '자택주소', '현주소', '현거주지', 'address_main'),
+    'address_main': ('주소', '자택주소', '현주소', '현거주지', 'address_main'),
     'zipcode': ('우편번호', '우편번호-현', 'zipcode'),
+    'registered_address': ('주민등록주소지', '주민등록주소', '주민등록상주소'),
+    'registered_zipcode': ('우편번호-주', '주민등록우편번호', '주민등록주소지우편번호', '주민등록주소우편번호'),
 }
 
 
@@ -255,13 +257,33 @@ def upsert_employees_from_excel(filepath):
         # pandas suffixes duplicate headers with .1, .2, ...; reject those too.
         matches = [column for column in df.columns
                    if re.sub(r'\.\d+$', '', normalize(column)) in aliases]
-        if len(matches) != 1:
+        if len(matches) > 1 or (not matches and field in ('emp_id', 'name', 'phone')):
             raise ValueError(f'필수 열을 확인해주세요: {aliases[0]} (중복 없이 1개 필요)')
-        mapped[field] = matches[0]
+        if matches:
+            mapped[field] = matches[0]
+    if not any(field in mapped for field in ('address_main', 'registered_address')):
+        raise ValueError('주소 열을 확인해주세요: 현거주지 또는 주민등록주소지 필요')
+    if 'address_main' in mapped and 'zipcode' not in mapped:
+        raise ValueError('현거주지 우편번호 열을 확인해주세요: 우편번호-현')
+    # Preserve older single-address files with a generic postal-code header.
+    if 'address_main' not in mapped and 'registered_zipcode' not in mapped and 'zipcode' in mapped:
+        if normalize(mapped['zipcode']) in ('우편번호', 'zipcode'):
+            mapped['registered_zipcode'] = mapped['zipcode']
     records = []
     seen = set()
     for index, row in df.iterrows():
         item = {field: str(row[column]).strip() for field, column in mapped.items()}
+        current_address = item.get('address_main', '')
+        registered_address = item.pop('registered_address', '')
+        registered_zipcode = item.pop('registered_zipcode', '')
+        if not current_address and registered_address:
+            if 'registered_zipcode' not in mapped:
+                raise ValueError(f'{index + 2}행: 주민등록주소지 우편번호 열을 확인해주세요: 우편번호-주')
+            item['address_main'] = registered_address
+            item['zipcode'] = registered_zipcode
+        else:
+            item['address_main'] = current_address
+            item.setdefault('zipcode', '')
         if not item['emp_id'] or not item['name']:
             raise ValueError(f'{index + 2}행: 사번과 성명은 필수입니다.')
         if item['emp_id'] in seen:
@@ -287,7 +309,8 @@ def upsert_employees_from_excel(filepath):
                     name = excluded.name,
                     phone = COALESCE(NULLIF(excluded.phone, ''), employees.phone),
                     address_main = COALESCE(NULLIF(excluded.address_main, ''), employees.address_main),
-                    zipcode = COALESCE(NULLIF(excluded.zipcode, ''), employees.zipcode),
+                    zipcode = CASE WHEN excluded.address_main != '' THEN excluded.zipcode
+                                   ELSE COALESCE(NULLIF(excluded.zipcode, ''), employees.zipcode) END,
                     last_updated = excluded.last_updated
             ''', (item['emp_id'], item['name'], item['phone'], item['address_main'], item['zipcode'], korea_now().isoformat(sep=' ', timespec='seconds')))
         conn.execute('INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)',

@@ -194,6 +194,27 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(database.get_employee_by_id('00123')['address_main'],'New')
         self.assertEqual(list((self.root/'uploads').iterdir()),before)
 
+    def test_import_registered_address_fallback_keeps_postcode_paired(self):
+        fallback = {'주민등록주소지': 'Registered', '우편번호-주': '04567'}
+        self.import_rows([self.roster(**fallback)])
+        employee = database.get_employee_by_id('00123')
+        self.assertEqual((employee['address_main'], employee['zipcode']), ('New', '01234'))
+        self.import_rows([self.roster(현거주지='  ', **fallback)])
+        employee = database.get_employee_by_id('00123')
+        self.assertEqual((employee['address_main'], employee['zipcode']), ('Registered', '04567'))
+        fallback['우편번호-주'] = ''
+        self.import_rows([self.roster(현거주지='', **fallback)])
+        employee = database.get_employee_by_id('00123')
+        self.assertEqual((employee['address_main'], employee['zipcode']), ('Registered', ''))
+
+    def test_import_invalid_fallback_is_atomic(self):
+        for extra in ({'주민등록주소지': 'Registered'},
+                      {'주민등록주소지': 'Registered', '우편번호-주': 'bad'}):
+            with self.subTest(extra=extra):
+                with self.assertRaises(ValueError):
+                    self.import_rows([self.roster(현거주지='', **extra)])
+                self.assertEqual(database.get_employee_by_id('00123')['address_main'], 'Original')
+
     def test_duplicate_headers_rejected(self):
         path=self.root/'duplicates.xlsx'
         row=self.roster()

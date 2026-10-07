@@ -14,7 +14,7 @@
         <div class="card" style="text-align: center;">
             <div class="card-header">
                 <h1 class="card-title">반갑습니다, {{ name }}님</h1>
-                <p class="card-description">원하시는 서비스를 선택해주세요.</p>
+                <p class="card-description">{{ '원하시는 서비스를 선택해주세요.' if enable_info or enable_gift else '현재 이용 가능한 서비스가 없습니다.' }}</p>
             </div>
 
             {% for category, message in get_flashed_messages(with_categories=true) %}

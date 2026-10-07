@@ -74,6 +74,29 @@ class RegressionTests(unittest.TestCase):
         self.client.set_cookie('session', token)
         self.assertEqual(self.client.get('/admin').status_code, 302)
 
+    def test_dashboard_routes_enabled_services_and_allows_logout(self):
+        self.employee()
+        for info, gift, destination in [('true','false','/info_update'),
+                                         ('false','true','/gift_update'),
+                                         ('true','true','/dashboard'),
+                                         ('false','false','/dashboard')]:
+            with self.subTest(info=info, gift=gift):
+                database.set_setting('enable_info_update', info)
+                database.set_setting('enable_gift_update', gift)
+                response = self.client.get('/', follow_redirects=True)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.request.path, destination)
+                self.assert_valid_html(destination)
+                if destination != '/dashboard':
+                    self.assertIn(b'action="/logout"', response.data)
+                    self.assertNotIn(b'href="/dashboard"', response.data)
+        database.set_setting('enable_info_update', 'true')
+        response = self.post('/info_update', {'no_change':'on'}, follow_redirects=True)
+        self.assertEqual(response.request.path, '/info_update')
+        self.assertIn('인사 정보가 저장되었습니다.', response.get_data(as_text=True))
+        self.post('/logout')
+        self.assertEqual(self.client.get('/dashboard').location, '/')
+
     def test_path_escape_and_active_content_rejected(self):
         (self.root / 'uploads' / 'marker.txt').write_text('secret')
         for filename in ['..%5cmarker.txt', '..%2fmarker.txt', 'test.html', 'test.svg']:

@@ -1,0 +1,8 @@
+{% if show_dashboard %}
+<a href="{{ url_for('dashboard') }}" class="btn btn-secondary">메인으로 돌아가기</a>
+{% else %}
+<form action="{{ url_for('logout') }}" method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-secondary" type="submit">로그아웃</button>
+</form>
+{% endif %}

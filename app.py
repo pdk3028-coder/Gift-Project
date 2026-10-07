@@ -170,9 +170,12 @@ def logout():
 def dashboard():
     if 'user_id' not in session:
         return redirect(url_for('index'))
+    enable_info = database.get_setting('enable_info_update') == 'true'
+    enable_gift = database.get_setting('enable_gift_update') == 'true'
+    if enable_info != enable_gift:
+        return redirect(url_for('info_update' if enable_info else 'gift_update'))
     return render_template('dashboard.html', name=session['user_name'],
-                           enable_info=database.get_setting('enable_info_update') == 'true',
-                           enable_gift=database.get_setting('enable_gift_update') == 'true')
+                           enable_info=enable_info, enable_gift=enable_gift)
 
 
 @app.route('/info_update', methods=['GET', 'POST'])
@@ -197,7 +200,8 @@ def info_update():
             return redirect(url_for('info_update'))
         flash('인사 정보가 저장되었습니다.', 'success')
         return redirect(url_for('dashboard'))
-    return render_template('info_update.html', user=user)
+    return render_template('info_update.html', user=user,
+                           show_dashboard=database.get_setting('enable_gift_update') == 'true')
 
 
 @app.route('/gift_update', methods=['GET', 'POST'])
@@ -235,7 +239,8 @@ def gift_update():
     if not user.get('gift_address'):
         user.update(gift_address=user.get('address_main'), gift_address_detail=user.get('address_main_detail'),
                     gift_zipcode=user.get('zipcode'), gift_receiver=user['name'])
-    return render_template('gift_update.html', user=user, gift_options=gifts)
+    return render_template('gift_update.html', user=user, gift_options=gifts,
+                           show_dashboard=database.get_setting('enable_info_update') == 'true')
 
 
 @app.route('/admin/login', methods=['GET', 'POST'])

@@ -19,7 +19,7 @@ py -3 -m venv .venv
 .venv\Scripts\python.exe -m flask --app app set-admin-password
 ```
 
-비밀번호는 12~128자입니다. `start_server.bat`를 실행한 뒤 브라우저에서 `http://127.0.0.1:5000`을 엽니다. Waitress 서버가 실행되며 창에서 Ctrl+C로 종료합니다. 디버그 모드는 사용하지 않습니다.
+비밀번호는 8~128자입니다. `start_server.bat`를 실행한 뒤 브라우저에서 `http://127.0.0.1:5000`을 엽니다. Waitress 서버가 실행되며 창에서 Ctrl+C로 종료합니다. 디버그 모드는 사용하지 않습니다.
 
 ## 변경 사항과 호환성
 

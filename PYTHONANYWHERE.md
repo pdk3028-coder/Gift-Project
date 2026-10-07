@@ -21,7 +21,7 @@ python3.13 -m venv /home/GiftPoongsan/.virtualenvs/gift-project
 
 ## 관리자 비밀번호 설정
 
-새 배포의 영구 데이터는 `/home/GiftPoongsan/gift-data/`에 생성됩니다. 로컬 PC의 DB는 자동으로 복사되지 않습니다. 다음 명령에서 새 관리자 비밀번호(12~128자)를 직접 입력하세요.
+새 배포의 영구 데이터는 `/home/GiftPoongsan/gift-data/`에 생성됩니다. 로컬 PC의 DB는 자동으로 복사되지 않습니다. 다음 명령에서 새 관리자 비밀번호(8~128자)를 직접 입력하세요.
 
 ```bash
 cd /home/GiftPoongsan/Gift-Project

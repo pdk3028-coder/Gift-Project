@@ -145,8 +145,8 @@ def get_setting(key, default='true'):
 
 def set_admin_password(new_password):
     """관리자 비밀번호를 해시하여 저장합니다."""
-    if not isinstance(new_password, str) or not 12 <= len(new_password) <= 128:
-        raise ValueError('관리자 비밀번호는 12~128자로 입력해주세요.')
+    if not isinstance(new_password, str) or not 8 <= len(new_password) <= 128:
+        raise ValueError('관리자 비밀번호는 8~128자로 입력해주세요.')
     hashed = generate_password_hash(new_password)
     set_setting('admin_password', hashed)
 

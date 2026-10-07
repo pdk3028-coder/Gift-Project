@@ -61,33 +61,48 @@
                 <div>
                     <h3
                         style="margin-bottom: 1rem; font-size: 1.1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
-                        1. 선물 선택
+                        1. {{ '선물 안내' if gift_options|length == 1 else '선물 선택' }}
                     </h3>
                     <div
                         style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
                         {% for gift in gift_options %}
-                        <label style="cursor: pointer; position: relative;">
-                            <input type="radio" name="selected_gift_id" value="{{ gift.id }}" {% if
+                        <div style="position: relative;">
+                            {% if gift_options|length == 1 %}
+                            <input type="hidden" name="selected_gift_id" value="{{ gift.id }}">
+                            {% else %}
+                            <input type="radio" id="gift-{{ gift.id }}" name="selected_gift_id" value="{{ gift.id }}" {% if
                                 user.selected_gift_id==gift.id %}checked{% endif %}
                                 required style="position: absolute; opacity: 0;">
+                            {% endif %}
                             <div class="gift-card"
                                 style="border: 2px solid {% if user.selected_gift_id == gift.id %}var(--primary-color){% else %}var(--border-color){% endif %}; border-radius: 0.5rem; overflow: hidden; height: 100%; transition: border-color 0.2s;">
                                 {% if gift.image_path %}
-                                <img src="/{{ gift.image_path }}"
-                                    style="width: 100%; height: 120px; object-fit: cover; display: block;">
+                                <button type="button" class="gift-image-trigger" data-gift-image="/{{ gift.image_path }}" data-gift-name="{{ gift.name }}" aria-label="{{ gift.name }} 사진 크게 보기">
+                                    <img src="/{{ gift.image_path }}" alt="{{ gift.name }}" style="width: 100%; height: 120px; object-fit: cover; display: block;">
+                                    <span class="gift-image-hint">사진 크게 보기</span>
+                                </button>
                                 {% else %}
                                 <div
                                     style="width: 100%; height: 120px; background: #eee; display: flex; align-items: center; justify-content: center; color: #999;">
                                     이미지 없음</div>
                                 {% endif %}
+                                {% if gift_options|length == 1 %}
                                 <div style="padding: 0.75rem;">
+                                {% else %}
+                                <label for="gift-{{ gift.id }}" style="padding: 0.75rem; cursor: pointer; margin: 0;">
+                                {% endif %}
                                     <div style="font-weight: 500; font-size: 0.9rem; margin-bottom: 0.25rem;">{{
                                         gift.name }}</div>
                                     <div style="font-size: 0.75rem; color: var(--text-secondary);">{{ gift.description
                                         }}</div>
+                                {% if gift_options|length == 1 %}
                                 </div>
+                                {% else %}
+                                    <div style="font-size: 0.75rem; margin-top: 0.5rem; color: var(--primary-color);">이 선물 선택</div>
+                                </label>
+                                {% endif %}
                             </div>
-                        </label>
+                        </div>
                         {% endfor %}
                     </div>
                 </div>
@@ -156,13 +171,14 @@
 
             if (isSameAddress) {
                 addressEditSection.style.display = 'none';
-                submitBtn.textContent = '선물 선택 완료 (배송지 변경 없음)';
+                submitBtn.textContent = {{ ('확인 완료 (배송지 변경 없음)' if gift_options|length == 1 else '선물 선택 완료 (배송지 변경 없음)')|tojson }};
             } else {
                 addressEditSection.style.display = 'block';
                 submitBtn.textContent = '저장하기';
             }
         }
     </script>
+    {% include '_gift_image_viewer.html' %}
 </body>
 
 </html>

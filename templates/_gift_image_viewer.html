@@ -1,0 +1,9 @@
+<link rel="stylesheet" href="{{ url_for('static', filename='gift_image_viewer.css') }}">
+<dialog id="gift-image-viewer" aria-labelledby="gift-image-title">
+    <div class="gift-image-toolbar">
+        <h2 id="gift-image-title"></h2>
+        <button type="button" class="gift-image-close" autofocus>닫기 ×</button>
+    </div>
+    <img class="gift-image-full" alt="">
+</dialog>
+<script src="{{ url_for('static', filename='gift_image_viewer.js') }}" defer></script>

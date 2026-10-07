@@ -58,8 +58,9 @@
                     style="display: flex; align-items: center; justify-content: space-between; padding: 1rem; border: 1px solid var(--border-color); border-radius: 0.5rem;">
                     <div style="display: flex; align-items: center; gap: 1rem;">
                         {% if gift.image_path %}
-                        <img src="/{{ gift.image_path }}" alt="gift"
-                            style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px;">
+                        <button type="button" class="gift-image-trigger" data-gift-image="/{{ gift.image_path }}" data-gift-name="{{ gift.name }}" aria-label="{{ gift.name }} 사진 크게 보기" style="width: 60px; flex-shrink: 0;">
+                            <img src="/{{ gift.image_path }}" alt="{{ gift.name }}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px; display: block;">
+                        </button>
                         {% else %}
                         <div
                             style="width: 60px; height: 60px; background-color: #eee; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #999;">
@@ -83,6 +84,7 @@
             </div>
         </div>
     </div>
+    {% include '_gift_image_viewer.html' %}
 </body>
 
 </html>

@@ -9,7 +9,8 @@ import secrets
 import sqlite3
 import tempfile
 import warnings
-from datetime import datetime, timedelta
+from datetime import timedelta
+from time_utils import korea_now
 
 import click
 from flask import Flask, abort, flash, redirect, render_template, request, send_file, send_from_directory, session, url_for
@@ -328,7 +329,7 @@ def download_excel():
     workbook.save(output)
     workbook.close()
     output.seek(0)
-    return send_file(output, as_attachment=True, download_name=f'employees_updated_{datetime.now():%Y%m%d%H%M%S}.xlsx',
+    return send_file(output, as_attachment=True, download_name=f'employees_updated_{korea_now():%Y%m%d%H%M%S}.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 

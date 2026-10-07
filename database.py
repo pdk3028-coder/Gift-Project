@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from contextlib import contextmanager
 import pandas as pd
-from datetime import datetime
+from time_utils import korea_now
 from werkzeug.security import generate_password_hash, check_password_hash
 
 DB_NAME = str(Path(os.environ.get('GIFT_DATABASE', Path(__file__).resolve().parent / 'employees.db')).resolve())
@@ -174,7 +174,7 @@ def update_privacy_consent(emp_id):
         SET privacy_agreed = 1,
             privacy_agreed_at = ?
         WHERE emp_id = ?
-    ''', (datetime.now().isoformat(sep=' ', timespec='seconds'), emp_id))
+    ''', (korea_now().isoformat(sep=' ', timespec='seconds'), emp_id))
     conn.commit()
     conn.close()
 
@@ -209,7 +209,7 @@ def update_employee_info(emp_id, data):
             values.append(data[key])
             
     updates.append("last_updated = ?")
-    values.append(datetime.now().isoformat(sep=' ', timespec='seconds'))
+    values.append(korea_now().isoformat(sep=' ', timespec='seconds'))
     values.append(emp_id)
     
     query = f"UPDATE employees SET {','.join(updates)} WHERE emp_id = ?"
@@ -289,9 +289,9 @@ def upsert_employees_from_excel(filepath):
                     address_main = COALESCE(NULLIF(excluded.address_main, ''), employees.address_main),
                     zipcode = COALESCE(NULLIF(excluded.zipcode, ''), employees.zipcode),
                     last_updated = excluded.last_updated
-            ''', (item['emp_id'], item['name'], item['phone'], item['address_main'], item['zipcode'], datetime.now().isoformat(sep=' ', timespec='seconds')))
+            ''', (item['emp_id'], item['name'], item['phone'], item['address_main'], item['zipcode'], korea_now().isoformat(sep=' ', timespec='seconds')))
         conn.execute('INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)',
-                     ('last_upload_time', datetime.now().strftime('%Y-%m-%d %H:%M')))
+                     ('last_upload_time', korea_now().strftime('%Y-%m-%d %H:%M')))
     return len(records)
 
 
@@ -313,7 +313,7 @@ def add_gift_option(name, description, image_path):
     c.execute('''
         INSERT INTO gift_options (name, description, image_path, created_at)
         VALUES (?, ?, ?, ?)
-    ''', (name, description, image_path, datetime.now().isoformat(sep=' ', timespec='seconds')))
+    ''', (name, description, image_path, korea_now().isoformat(sep=' ', timespec='seconds')))
     conn.commit()
     conn.close()
 
